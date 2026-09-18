@@ -39,7 +39,9 @@ def sanitize_folder(
 
     targets = sorted(
         p for p in input_dir.iterdir()
-        if p.is_file() and p.suffix.lower() == ".txt"
+        if p.is_file()
+        and p.suffix.lower() == ".txt"
+        and not p.name.startswith("._")  # macOS AppleDouble メタファイルを除外
     )
     total = len(targets)
 

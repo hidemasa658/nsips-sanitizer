@@ -204,6 +204,21 @@ def test_sanitize_folder_progress_callback_invoked(tmp_path):
     assert calls == [(1, 2, "a.txt"), (2, 2, "b.txt")]
 
 
+def test_sanitize_folder_skips_macos_appledouble_files(tmp_path):
+    # macOS が非 HFS+ ボリュームに書き込む "._filename" メタファイルは除外する
+    src_dir = tmp_path / "in"
+    src_dir.mkdir()
+    (src_dir / "real.txt").write_bytes(b"VER,h\r\n1,pii\r\n")
+    (src_dir / "._real.txt").write_bytes(b"\x00\x05\x16\x07binary_metadata")
+
+    out = tmp_path / "out"
+    summary = sanitize_folder(src_dir, out)
+
+    assert summary.processed == 1
+    assert (out / "real.txt").exists()
+    assert not (out / "._real.txt").exists()
+
+
 def test_sanitize_folder_empty_input_dir_returns_zero_summary(tmp_path):
     src_dir = tmp_path / "in"
     src_dir.mkdir()
