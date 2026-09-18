@@ -1,4 +1,4 @@
-from src.sanitizer import sanitize_bytes
+from src.sanitizer import sanitize_bytes, SanitizeSummary
 
 
 def test_sanitize_bytes_removes_single_record_1_line():
@@ -73,3 +73,18 @@ def test_sanitize_bytes_no_trailing_newline():
     # 最終行に改行がなくても崩れない
     data = b"VER01,x\r\n1,pii\r\n2,last_no_newline"
     assert sanitize_bytes(data) == b"VER01,x\r\n2,last_no_newline"
+
+
+def test_summary_defaults_to_zero():
+    s = SanitizeSummary()
+    assert s.processed == 0
+    assert s.skipped == 0
+    assert s.errors == 0
+
+
+def test_summary_fields_are_writable():
+    s = SanitizeSummary()
+    s.processed = 3
+    s.errors = 1
+    assert s.processed == 3
+    assert s.errors == 1
