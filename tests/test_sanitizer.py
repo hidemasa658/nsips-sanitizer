@@ -1,4 +1,8 @@
-from src.sanitizer import sanitize_bytes, SanitizeSummary
+from pathlib import Path
+
+from src.sanitizer import sanitize_bytes, sanitize_folder, SanitizeSummary
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "sample_ok"
 
 
 def test_sanitize_bytes_removes_single_record_1_line():
@@ -88,3 +92,41 @@ def test_summary_fields_are_writable():
     s.errors = 1
     assert s.processed == 3
     assert s.errors == 1
+
+
+def test_sanitize_folder_processes_txt_only(tmp_path):
+    out = tmp_path / "out"
+    summary = sanitize_folder(FIXTURE_DIR, out)
+
+    # rx_001, rx_002, rx_empty の 3 つが処理対象
+    assert summary.processed == 3
+    assert summary.errors == 0
+
+    # 出力ファイルが存在
+    assert (out / "rx_001.txt").exists()
+    assert (out / "rx_002.txt").exists()
+    assert (out / "rx_empty.txt").exists()
+
+    # 非 .txt はコピーされない
+    assert not (out / "readme.md").exists()
+
+
+def test_sanitize_folder_removes_record_1_from_output(tmp_path):
+    out = tmp_path / "out"
+    sanitize_folder(FIXTURE_DIR, out)
+
+    output_bytes = (out / "rx_001.txt").read_bytes()
+    # record 1 行は削除されている
+    for line in output_bytes.splitlines():
+        assert not line.startswith(b"1,")
+    # ヘッダは残っている
+    assert output_bytes.startswith(b"VER010603,")
+
+
+def test_sanitize_folder_leaves_file_without_record_1_intact(tmp_path):
+    out = tmp_path / "out"
+    sanitize_folder(FIXTURE_DIR, out)
+
+    src = (FIXTURE_DIR / "rx_002.txt").read_bytes()
+    dst = (out / "rx_002.txt").read_bytes()
+    assert src == dst
