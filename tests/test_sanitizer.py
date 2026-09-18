@@ -130,3 +130,87 @@ def test_sanitize_folder_leaves_file_without_record_1_intact(tmp_path):
     src = (FIXTURE_DIR / "rx_002.txt").read_bytes()
     dst = (out / "rx_002.txt").read_bytes()
     assert src == dst
+
+
+def test_sanitize_folder_ignores_subdirectories(tmp_path):
+    src_dir = tmp_path / "in"
+    src_dir.mkdir()
+    (src_dir / "top.txt").write_bytes(b"VER,h\r\n1,pii\r\n2,x\r\n")
+    sub = src_dir / "sub"
+    sub.mkdir()
+    (sub / "nested.txt").write_bytes(b"VER,h\r\n1,pii\r\n")
+
+    out = tmp_path / "out"
+    summary = sanitize_folder(src_dir, out)
+
+    assert summary.processed == 1
+    assert (out / "top.txt").exists()
+    assert not (out / "nested.txt").exists()
+    assert not (out / "sub").exists()
+
+
+def test_sanitize_folder_creates_missing_output_dir(tmp_path):
+    src_dir = tmp_path / "in"
+    src_dir.mkdir()
+    (src_dir / "a.txt").write_bytes(b"VER,h\r\n")
+
+    out = tmp_path / "nested" / "does_not_exist" / "yet"
+    assert not out.exists()
+
+    sanitize_folder(src_dir, out)
+
+    assert out.is_dir()
+    assert (out / "a.txt").exists()
+
+
+def test_sanitize_folder_overwrites_existing_output_file(tmp_path):
+    src_dir = tmp_path / "in"
+    src_dir.mkdir()
+    (src_dir / "a.txt").write_bytes(b"VER,new\r\n1,pii\r\n2,new\r\n")
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "a.txt").write_bytes(b"STALE_CONTENT")
+
+    sanitize_folder(src_dir, out)
+
+    result = (out / "a.txt").read_bytes()
+    assert b"STALE_CONTENT" not in result
+    assert result == b"VER,new\r\n2,new\r\n"
+
+
+def test_sanitize_folder_case_insensitive_extension(tmp_path):
+    src_dir = tmp_path / "in"
+    src_dir.mkdir()
+    (src_dir / "upper.TXT").write_bytes(b"VER,h\r\n1,pii\r\n")
+
+    out = tmp_path / "out"
+    summary = sanitize_folder(src_dir, out)
+
+    assert summary.processed == 1
+    assert (out / "upper.TXT").exists()
+
+
+def test_sanitize_folder_progress_callback_invoked(tmp_path):
+    src_dir = tmp_path / "in"
+    src_dir.mkdir()
+    (src_dir / "a.txt").write_bytes(b"VER,a\r\n")
+    (src_dir / "b.txt").write_bytes(b"VER,b\r\n")
+
+    out = tmp_path / "out"
+    calls = []
+    sanitize_folder(src_dir, out, progress_cb=lambda i, t, n: calls.append((i, t, n)))
+
+    assert calls == [(1, 2, "a.txt"), (2, 2, "b.txt")]
+
+
+def test_sanitize_folder_empty_input_dir_returns_zero_summary(tmp_path):
+    src_dir = tmp_path / "in"
+    src_dir.mkdir()
+    out = tmp_path / "out"
+
+    summary = sanitize_folder(src_dir, out)
+
+    assert summary.processed == 0
+    assert summary.errors == 0
+    assert out.is_dir()  # output dir は作成される
