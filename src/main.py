@@ -86,8 +86,79 @@ class App:
             self.output_var.set(path)
 
     def _on_run(self) -> None:
-        # 次タスクで実装
-        pass
+        input_path = self.input_var.get().strip()
+        output_path = self.output_var.get().strip()
+
+        if not input_path or not output_path:
+            messagebox.showwarning(APP_TITLE, "入力フォルダと出力フォルダの両方を選択してください。")
+            return
+
+        input_dir = Path(input_path)
+        output_dir = Path(output_path)
+
+        if not input_dir.is_dir():
+            messagebox.showerror(APP_TITLE, f"入力フォルダが存在しません:\n{input_dir}")
+            return
+
+        self.run_button.state(["disabled"])
+        self.status_var.set("処理中...")
+
+        self._worker = threading.Thread(
+            target=self._worker_run,
+            args=(input_dir, output_dir),
+            daemon=True,
+        )
+        self._worker.start()
+        self.root.after(POLL_INTERVAL_MS, self._poll_queue)
+
+    def _worker_run(self, input_dir: Path, output_dir: Path) -> None:
+        try:
+            summary = sanitize_folder(
+                input_dir,
+                output_dir,
+                progress_cb=lambda i, t, n: self._queue.put(("progress", i, t, n)),
+            )
+            self._queue.put(("done", summary))
+        except Exception as exc:  # noqa: BLE001 — worker thread must not crash silently
+            self._queue.put(("error", str(exc)))
+
+    def _poll_queue(self) -> None:
+        try:
+            while True:
+                msg = self._queue.get_nowait()
+                kind = msg[0]
+                if kind == "progress":
+                    _, i, t, name = msg
+                    self.status_var.set(f"処理中: {i}/{t} ({name})")
+                elif kind == "done":
+                    _, summary = msg
+                    self._on_done(summary)
+                    return
+                elif kind == "error":
+                    _, err = msg
+                    self._on_error(err)
+                    return
+        except queue.Empty:
+            pass
+
+        if self._worker and self._worker.is_alive():
+            self.root.after(POLL_INTERVAL_MS, self._poll_queue)
+
+    def _on_done(self, summary: SanitizeSummary) -> None:
+        self.run_button.state(["!disabled"])
+        self.status_var.set("完了")
+        messagebox.showinfo(
+            APP_TITLE,
+            f"完了しました\n\n"
+            f"処理: {summary.processed} 件\n"
+            f"スキップ: {summary.skipped} 件\n"
+            f"エラー: {summary.errors} 件",
+        )
+
+    def _on_error(self, err: str) -> None:
+        self.run_button.state(["!disabled"])
+        self.status_var.set("エラー")
+        messagebox.showerror(APP_TITLE, f"処理中にエラーが発生しました:\n{err}")
 
 
 def main() -> None:
